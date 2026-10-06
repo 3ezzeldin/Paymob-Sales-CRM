@@ -1,8 +1,20 @@
 # User provisioning
 
 `provision-users.mjs` creates the CRM's Supabase accounts from `users.json`:
-an auth user per person, the matching `public.profiles` row, and the
-`manager_id` link from each agent to their team lead.
+an auth user per person, the matching `public.profiles` row, and the reporting
+links up the chain.
+
+The roster has three tiers, matching what the CRM enforces on import:
+
+| Tier | Roles | Reports to |
+|---|---|---|
+| `seniors` | Admin, Sales Director, Head of Sales | nobody |
+| `managers` | Area Manager | a senior, via `reportsTo` — required |
+| `agents` | Agent | an Area Manager, via `manager` |
+
+A senior marked `"existing": true` is never created. The script looks them up by
+email and uses their id for the links, leaving their profile untouched. That is
+the normal case: the people at the top already have accounts.
 
 That last link is the one that matters most. The RLS policies in
 `schema-merchants.sql` gate every read and write through
@@ -14,10 +26,12 @@ Until the chain exists, saving a merchant fails with
 
 1. Run the SQL migrations first — at minimum `schema.sql` and
    `schema-hierarchy.sql`, which create `profiles` and the RLS helper functions.
-2. Check the four manager addresses in `users.json`. They were derived from the
+2. Replace every `TODO` in `users.json` with the senior names and emails exactly
+   as the CRM stores them. The script refuses to run while any remain.
+3. Check the four manager addresses. They were derived from the
    `first.last@paymob.com` pattern the agent list uses and are flagged
    `"emailVerified": false`. A wrong address creates an account nobody can use.
-3. Confirm the `role` values match what `sees_all()` and `in_my_scope()` test
+4. Confirm the `role` values match what `sees_all()` and `in_my_scope()` test
    for. The defaults are `Agent` and `Manager`.
 
 ## Running

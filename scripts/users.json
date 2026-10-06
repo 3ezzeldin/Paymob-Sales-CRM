@@ -1,20 +1,37 @@
 {
   "_comment": [
     "Roster for scripts/provision-users.mjs. No secrets in this file.",
-    "role values must match whatever sees_all() / in_my_scope() expect in schema-hierarchy.sql.",
-    "Entries flagged emailVerified:false had their address derived from the first.last@paymob.com",
-    "pattern used by the agent list. Confirm each one before running with --apply."
+    "Three tiers: seniors (Admin / Sales Director / Head of Sales), managers (Area",
+    "Manager), agents. The CRM requires every Area Manager to report to a senior.",
+    "An entry marked \"existing\": true is never created; the script looks it up by",
+    "email and uses its id for the reporting links.",
+    "Addresses marked \"emailVerified\": false were derived from the",
+    "first.last@paymob.com pattern and need confirming before --apply."
   ],
   "defaults": {
     "domain": "paymob.com",
     "agentRole": "Agent",
-    "managerRole": "Manager"
+    "managerRole": "Area Manager"
   },
+  "seniors": [
+    {
+      "name": "TODO — your name exactly as the CRM stores it",
+      "email": "TODO",
+      "role": "Admin",
+      "existing": true
+    },
+    {
+      "name": "TODO — Mostafa, full name exactly as the CRM stores it",
+      "email": "TODO",
+      "role": "Head of Sales",
+      "existing": true
+    }
+  ],
   "managers": [
-    { "name": "Sayeed Madani",   "email": "sayeed.madani@paymob.com",   "emailVerified": false, "team": "Team A" },
-    { "name": "Mohammed Suhail", "email": "mohammed.suhail@paymob.com", "emailVerified": false, "team": "Team B" },
-    { "name": "Mohamed Khan",    "email": "mohamed.khan@paymob.com",    "emailVerified": false, "team": "Team C" },
-    { "name": "Rashed Mohamed",  "email": "rashed.mohamed@paymob.com",  "emailVerified": false, "team": "Team D" }
+    { "name": "Mohammed Suhail", "email": "mohammed.suhail@paymob.com", "emailVerified": false, "team": "Team B", "reportsTo": "TODO — your name exactly as the CRM stores it" },
+    { "name": "Rashed Mohamed",  "email": "rashed.mohamed@paymob.com",  "emailVerified": false, "team": "Team D", "reportsTo": "TODO — your name exactly as the CRM stores it" },
+    { "name": "Sayeed Madani",   "email": "sayeed.madani@paymob.com",   "emailVerified": false, "team": "Team A", "reportsTo": "TODO — Mostafa, full name exactly as the CRM stores it" },
+    { "name": "Mohamed Khan",    "email": "mohamed.khan@paymob.com",    "emailVerified": false, "team": "Team C", "reportsTo": "TODO — Mostafa, full name exactly as the CRM stores it" }
   ],
   "agents": [
     { "name": "Tamoor Zia",   "email": "tamoor.zia@paymob.com",   "emailVerified": true, "title": "Sales Acquisition Specialist (POS)", "manager": "Sayeed Madani" },

@@ -208,10 +208,20 @@ async function upsertProfiles(rows) {
 function loadRoster() {
   const raw = JSON.parse(readFileSync(ROSTER_FILE, 'utf8'));
   const d = raw.defaults ?? {};
+
+  const todo = (v) => typeof v === 'string' && v.trim().toUpperCase().startsWith('TODO');
+
+  const seniors = (raw.seniors ?? []).map((p) => ({
+    ...p,
+    email: String(p.email).trim().toLowerCase(),
+    role: p.role ?? 'Admin',
+    kind: 'senior',
+    existing: p.existing !== false,
+  }));
   const managers = (raw.managers ?? []).map((m) => ({
     ...m,
     email: m.email.trim().toLowerCase(),
-    role: m.role ?? d.managerRole ?? 'Manager',
+    role: m.role ?? d.managerRole ?? 'Area Manager',
     kind: 'manager',
   }));
   const agents = (raw.agents ?? []).map((a) => ({
@@ -221,14 +231,32 @@ function loadRoster() {
     kind: 'agent',
   }));
 
-  const names = new Set(managers.map((m) => m.name));
+  const unfilled = [...seniors, ...managers].filter(
+    (p) => todo(p.name) || todo(p.email) || todo(p.reportsTo),
+  );
+  if (unfilled.length) {
+    die(`${unfilled.length} roster entr(ies) still contain TODO placeholders.\n` +
+        unfilled.map((p) => `  ${p.kind}: ${p.name}`).join('\n') +
+        '\nFill in the senior names and emails in ' + ROSTER_FILE + ' before running.');
+  }
+
+  // The CRM requires every Area Manager to report to a senior, so an unset or
+  // unknown reportsTo is a hard error rather than a null link.
+  const seniorNames = new Set(seniors.map((p) => p.name));
+  for (const m of managers) {
+    if (!m.reportsTo) die(`manager ${m.name} has no reportsTo; an Area Manager must report to a senior`);
+    if (!seniorNames.has(m.reportsTo)) {
+      die(`manager ${m.name} reports to "${m.reportsTo}", who is not in the seniors list`);
+    }
+  }
+  const managerNames = new Set(managers.map((m) => m.name));
   for (const a of agents) {
-    if (a.manager && !names.has(a.manager)) {
+    if (a.manager && !managerNames.has(a.manager)) {
       die(`agent ${a.name} names manager "${a.manager}", who is not in the managers list`);
     }
   }
   const seen = new Set();
-  for (const p of [...managers, ...agents]) {
+  for (const p of [...seniors, ...managers, ...agents]) {
     if (seen.has(p.email)) die(`duplicate email in the roster: ${p.email}`);
     seen.add(p.email);
   }
@@ -239,7 +267,7 @@ function loadRoster() {
   for (const a of agents) {
     if (!a.team && a.manager) a.team = teamByManager.get(a.manager) ?? null;
   }
-  return { managers, agents };
+  return { seniors, managers, agents };
 }
 
 // ---------------------------------------------------------------- main
@@ -250,8 +278,8 @@ async function main() {
         '  export SUPABASE_SERVICE_ROLE_KEY=<service role key>');
   }
 
-  const { managers, agents } = loadRoster();
-  const people = AGENTS_ONLY ? agents : [...managers, ...agents];
+  const { seniors, managers, agents } = loadRoster();
+  const people = AGENTS_ONLY ? agents : [...seniors, ...managers, ...agents];
 
   const supplied = PASSWORD_FILE ? readPasswordCsv(resolve(process.cwd(), PASSWORD_FILE)) : null;
   for (const p of people) {
@@ -268,7 +296,7 @@ async function main() {
   }
 
   console.log(`Supabase project : ${SUPABASE_URL}`);
-  console.log(`Roster           : ${managers.length} manager(s), ${agents.length} agent(s)`);
+  console.log(`Roster           : ${seniors.length} senior(s), ${managers.length} manager(s), ${agents.length} agent(s)`);
   console.log(`Mode             : ${APPLY ? 'APPLY (writes to the project)' : 'DRY RUN (writes nothing)'}`);
   console.log('');
 
@@ -287,7 +315,9 @@ async function main() {
   if (!APPLY) {
     console.log('Would create:');
     for (const p of people) {
-      console.log(`  ${p.kind.padEnd(7)} ${p.email.padEnd(30)} role=${String(p.role).padEnd(8)} manager=${p.manager ?? '-'}`);
+      const up = p.reportsTo ?? p.manager ?? '-';
+      const tag = p.existing ? '(existing, lookup only)' : '';
+      console.log(`  ${p.kind.padEnd(7)} ${p.email.padEnd(30)} role=${String(p.role).padEnd(14)} reports to=${String(up).padEnd(18)} ${tag}`);
     }
     console.log(`\n${YELLOW}Dry run only. Re-run with --apply to create these accounts.${OFF}`);
     return;
@@ -297,9 +327,23 @@ async function main() {
   const idByName = new Map();
   const results = [];
 
-  for (const group of AGENTS_ONLY ? [agents] : [managers, agents]) {
+  for (const group of AGENTS_ONLY ? [agents] : [seniors, managers, agents]) {
     for (const p of group) {
       const already = existing.get(p.email);
+      if (p.existing && !already) {
+        fail(`${p.email} is marked "existing": true but no account with that address was found.`);
+        note('Check the address, or set "existing": false to have it created.');
+        p.status = 'failed';
+        continue;
+      }
+      if (p.existing) {
+        ok(`found existing account ${p.email} (${p.role})`);
+        p.id = already.id;
+        p.status = 'existing';
+        idByName.set(p.name, p.id);
+        results.push(p);
+        continue;
+      }
       if (already) {
         warn(`${p.email} already has an auth user; reusing it and leaving the password unchanged`);
         p.id = already.id;
@@ -321,14 +365,16 @@ async function main() {
     }
   }
 
-  const rows = results.map((p) => {
+  // A senior's existing profile is left alone; only their id is used for links.
+  const rows = results.filter((p) => !p.existing).map((p) => {
     const row = { id: p.id };
     if (resolved.name) row[resolved.name] = p.name;
     if (resolved.email) row[resolved.email] = p.email;
     if (resolved.role) row[resolved.role] = p.role;
     if (resolved.title && p.title) row[resolved.title] = p.title;
     if (resolved.team && p.team) row[resolved.team] = p.team;
-    if (resolved.manager) row[resolved.manager] = p.manager ? (idByName.get(p.manager) ?? null) : null;
+    const upline = p.reportsTo ?? p.manager ?? null;
+    if (resolved.manager) row[resolved.manager] = upline ? (idByName.get(upline) ?? null) : null;
     return row;
   });
 
