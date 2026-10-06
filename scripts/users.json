@@ -15,23 +15,25 @@
   },
   "seniors": [
     {
-      "name": "TODO — your name exactly as the CRM stores it",
-      "email": "TODO",
+      "name": "Mohamed Ezzeldin",
+      "email": "mohamed.ezzeldin@paymob.com",
+      "emailVerified": false,
       "role": "Admin",
       "existing": true
     },
     {
-      "name": "TODO — Mostafa, full name exactly as the CRM stores it",
-      "email": "TODO",
+      "name": "Mostafa Abdelazim",
+      "email": "mostafa.abdelazim@paymob.com",
+      "emailVerified": false,
       "role": "Head of Sales",
       "existing": true
     }
   ],
   "managers": [
-    { "name": "Mohammed Suhail", "email": "mohammed.suhail@paymob.com", "emailVerified": false, "team": "Team B", "reportsTo": "TODO — your name exactly as the CRM stores it" },
-    { "name": "Rashed Mohamed",  "email": "rashed.mohamed@paymob.com",  "emailVerified": false, "team": "Team D", "reportsTo": "TODO — your name exactly as the CRM stores it" },
-    { "name": "Sayeed Madani",   "email": "sayeed.madani@paymob.com",   "emailVerified": false, "team": "Team A", "reportsTo": "TODO — Mostafa, full name exactly as the CRM stores it" },
-    { "name": "Mohamed Khan",    "email": "mohamed.khan@paymob.com",    "emailVerified": false, "team": "Team C", "reportsTo": "TODO — Mostafa, full name exactly as the CRM stores it" }
+    { "name": "Mohammed Suhail", "email": "mohammed.suhail@paymob.com", "emailVerified": false, "team": "Team B", "reportsTo": "Mohamed Ezzeldin" },
+    { "name": "Rashed Mohamed",  "email": "rashed.mohamed@paymob.com",  "emailVerified": false, "team": "Team D", "reportsTo": "Mohamed Ezzeldin" },
+    { "name": "Sayeed Madani",   "email": "sayeed.madani@paymob.com",   "emailVerified": false, "team": "Team A", "reportsTo": "Mostafa Abdelazim" },
+    { "name": "Mohamed Khan",    "email": "mohamed.khan@paymob.com",    "emailVerified": false, "team": "Team C", "reportsTo": "Mostafa Abdelazim" }
   ],
   "agents": [
     { "name": "Tamoor Zia",   "email": "tamoor.zia@paymob.com",   "emailVerified": true, "title": "Sales Acquisition Specialist (POS)", "manager": "Sayeed Madani" },
