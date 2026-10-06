@@ -1,0 +1,28 @@
+{
+  "_comment": [
+    "Roster for scripts/provision-users.mjs. No secrets in this file.",
+    "role values must match whatever sees_all() / in_my_scope() expect in schema-hierarchy.sql.",
+    "Entries flagged emailVerified:false had their address derived from the first.last@paymob.com",
+    "pattern used by the agent list. Confirm each one before running with --apply."
+  ],
+  "defaults": {
+    "domain": "paymob.com",
+    "agentRole": "Agent",
+    "managerRole": "Manager"
+  },
+  "managers": [
+    { "name": "Sayeed Madani",   "email": "sayeed.madani@paymob.com",   "emailVerified": false, "team": "Team A" },
+    { "name": "Mohammed Suhail", "email": "mohammed.suhail@paymob.com", "emailVerified": false, "team": "Team B" },
+    { "name": "Mohamed Khan",    "email": "mohamed.khan@paymob.com",    "emailVerified": false, "team": "Team C" },
+    { "name": "Rashed Mohamed",  "email": "rashed.mohamed@paymob.com",  "emailVerified": false, "team": "Team D" }
+  ],
+  "agents": [
+    { "name": "Tamoor Zia",   "email": "tamoor.zia@paymob.com",   "emailVerified": true, "title": "Sales Acquisition Specialist (POS)", "manager": "Sayeed Madani" },
+    { "name": "Sadaf Saad",   "email": "sadaf.saad@paymob.com",   "emailVerified": true, "title": "Sales Acquisition Specialist (POS)", "manager": "Sayeed Madani" },
+    { "name": "Athul Raj",    "email": "athul.raj@paymob.com",    "emailVerified": true, "title": "Sales Acquisition Specialist (POS)", "manager": "Mohammed Suhail" },
+    { "name": "Feroz Hyder",  "email": "feroz.hyder@paymob.com",  "emailVerified": true, "title": "Sales Acquisition Specialist (POS)", "manager": "Mohammed Suhail" },
+    { "name": "Syeda Hijab",  "email": "syeda.hijab@paymob.com",  "emailVerified": true, "title": "Sales Acquisition Specialist (POS)", "manager": "Mohamed Khan" },
+    { "name": "Rajeev Anand", "email": "rajeev.anand@paymob.com", "emailVerified": true, "title": "Sales Acquisition Specialist (POS)", "manager": "Mohamed Khan" },
+    { "name": "Mir Rizwan",   "email": "mir.rizwan@paymob.com",   "emailVerified": true, "title": "Sales Acquisition Specialist (POS)", "manager": "Rashed Mohamed" }
+  ]
+}

@@ -1,0 +1,10 @@
+# Credentials produced by scripts/provision-users.mjs — never commit these.
+credentials*.csv
+credentials*.xlsx
+*.local.csv
+.env
+.env.*
+!.env.example
+
+node_modules/
+.DS_Store
