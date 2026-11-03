@@ -52,12 +52,49 @@ const CHANGES_FILE = valueOf('--changes') ?? resolve(HERE, 'changes.json');
 const api = makeApi(env());
 
 // ------------------------------------------------------------------ lookups
-function findProfile(profiles, who) {
+const textFields = (p) => Object.values(p).filter((v) => typeof v === 'string');
+const label = (p, resolved) => p[resolved.name] ?? p[resolved.username] ?? p[resolved.email] ?? p.id;
+
+/**
+ * Resolves a person by username, full name or email. Falls back to a partial
+ * match on one name ("Hassan"), which is how people actually refer to each
+ * other, but only when exactly one profile matches — an ambiguous reference
+ * stops the run rather than picking somebody at random.
+ */
+function findProfile(profiles, who, resolved = {}) {
   const needle = String(who).trim().toLowerCase();
-  const hits = profiles.filter((p) =>
-    Object.values(p).some((v) => typeof v === 'string' && v.trim().toLowerCase() === needle));
-  if (hits.length > 1) die(`"${who}" matches ${hits.length} profiles; use the email address instead`);
-  return hits[0] ?? null;
+  if (!needle) return null;
+
+  const exact = profiles.filter((p) =>
+    textFields(p).some((v) => v.trim().toLowerCase() === needle));
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) {
+    die(`"${who}" matches ${exact.length} profiles exactly; use the email address instead`);
+  }
+
+  const partial = profiles.filter((p) =>
+    textFields(p).some((v) => v.toLowerCase().split(/[\s._@-]+/).includes(needle)));
+  if (partial.length === 1) {
+    warn(`"${who}" matched ${label(partial[0], resolved)} on a partial name`);
+    return partial[0];
+  }
+  if (partial.length > 1) {
+    die(`"${who}" is ambiguous — it matches ${partial.length} people:\n` +
+        partial.map((p) => `  ${label(p, resolved)}`).join('\n') +
+        '\nUse the full name or the email address in the changes file.');
+  }
+  return null;
+}
+
+/**
+ * "@manager" means "whoever this person already reports to", so a book of
+ * business can be handed up the chain without naming the lead. "@manager" on
+ * toTeam means "the team of the manager being moved to".
+ */
+function resolveManagerOf(profiles, person, resolved) {
+  if (!resolved.manager) return null;
+  const id = person[resolved.manager];
+  return id ? (profiles.find((p) => p.id === id) ?? null) : null;
 }
 
 async function loadProfiles() {
@@ -128,7 +165,7 @@ async function main() {
   // ---------------------------------------------------------------- joiners
   for (const p of adds) {
     const email = String(p.email).trim().toLowerCase();
-    const manager = p.reportsTo ? findProfile(profiles, p.reportsTo) : null;
+    const manager = p.reportsTo ? findProfile(profiles, p.reportsTo, resolved) : null;
     if (p.reportsTo && !manager) {
       fail(`add ${p.name}: "${p.reportsTo}" not found in profiles`);
       continue;
@@ -174,32 +211,47 @@ async function main() {
 
   // ----------------------------------------------------------------- movers
   for (const m of moves) {
-    const who = findProfile(profiles, m.who ?? m.email ?? m.name);
+    const who = findProfile(profiles, m.who ?? m.email ?? m.name, resolved);
     if (!who) { fail(`move: "${m.who ?? m.email ?? m.name}" not found in profiles`); continue; }
-    const toManager = m.toManager ? findProfile(profiles, m.toManager) : null;
+    const toManager = m.toManager ? findProfile(profiles, m.toManager, resolved) : null;
     if (m.toManager && !toManager) { fail(`move ${m.who}: new manager "${m.toManager}" not found`); continue; }
 
     const patch = {};
-    if (resolved.team && m.toTeam) patch[resolved.team] = m.toTeam;
+    const team = m.toTeam === '@manager'
+      ? (toManager ? toManager[resolved.team] : null)
+      : m.toTeam;
+    if (m.toTeam === '@manager' && !toManager) {
+      fail(`move ${m.who}: toTeam is "@manager" but no toManager was given`);
+      continue;
+    }
+    if (resolved.team && team) patch[resolved.team] = team;
     if (resolved.manager && toManager) patch[resolved.manager] = toManager.id;
     if (!Object.keys(patch).length) { warn(`move ${m.who}: nothing to change`); continue; }
 
     if (!APPLY) {
-      console.log(`  move      ${m.who} -> team=${m.toTeam ?? 'unchanged'} manager=${m.toManager ?? 'unchanged'}`);
+      console.log(`  move      ${m.who} -> team=${team ?? 'unchanged'} manager=${toManager ? label(toManager, resolved) : 'unchanged'}`);
       continue;
     }
     const res = await api(`/rest/v1/profiles?id=eq.${who.id}`, {
       method: 'PATCH', body: patch, headers: { Prefer: 'return=representation' } });
     if (!res.ok) { fail(`move ${m.who}: HTTP ${res.status} ${JSON.stringify(res.payload)}`); continue; }
-    ok(`moved ${m.who}${m.toTeam ? ` to ${m.toTeam}` : ''}${m.toManager ? ` under ${m.toManager}` : ''}`);
+    ok(`moved ${m.who}${team ? ` to ${team}` : ''}${toManager ? ` under ${label(toManager, resolved)}` : ''}`);
   }
 
   // ---------------------------------------------------------------- leavers
   for (const l of leavers) {
-    const who = findProfile(profiles, l.who ?? l.email ?? l.name);
+    const who = findProfile(profiles, l.who ?? l.email ?? l.name, resolved);
     if (!who) { fail(`offboard: "${l.who ?? l.email ?? l.name}" not found in profiles`); continue; }
-    const successor = l.reassignTo ? findProfile(profiles, l.reassignTo) : null;
+    const successor = l.reassignTo === '@manager'
+      ? resolveManagerOf(profiles, who, resolved)
+      : (l.reassignTo ? findProfile(profiles, l.reassignTo, resolved) : null);
+    if (l.reassignTo === '@manager' && !successor) {
+      fail(`offboard ${l.who}: reassignTo is "@manager" but they have no manager set`);
+      note('Name the successor explicitly in changes.json instead.');
+      continue;
+    }
     if (l.reassignTo && !successor) { fail(`offboard ${l.who}: successor "${l.reassignTo}" not found`); continue; }
+    const successorName = successor ? label(successor, resolved) : null;
 
     const merchants = await countOwned('merchants', 'owner_agent_id', who.id);
     const activities = await countOwned('activities', 'agent_id', who.id);
@@ -217,7 +269,7 @@ async function main() {
       continue;
     }
     if (!APPLY) {
-      console.log(`            would reassign to ${l.reassignTo ?? '(nothing to reassign)'}, then ${HARD_DELETE ? 'DELETE' : 'deactivate'}`);
+      console.log(`            would reassign to ${successorName ?? '(nothing to reassign)'}, then ${HARD_DELETE ? 'DELETE' : 'deactivate'}`);
       continue;
     }
 
@@ -226,7 +278,7 @@ async function main() {
         const nameCol = resolved.name ? 'owner_agent' : null;
         const m = await reassign('merchants', 'owner_agent_id', nameCol, who.id, successor.id, successor[resolved.name]);
         const a = await reassign('activities', 'agent_id', 'agent', who.id, successor.id, successor[resolved.name]);
-        ok(`reassigned ${m} merchant(s) and ${a} activity record(s) to ${l.reassignTo}`);
+        ok(`reassigned ${m} merchant(s) and ${a} activity record(s) to ${successorName}`);
       } catch (err) {
         fail(`offboard ${l.who}: reassignment failed, nothing else was changed: ${err.message}`);
         continue;

@@ -82,9 +82,17 @@ node scripts/manage-users.mjs            # dry run, reports what it would do
 node scripts/manage-users.mjs --apply
 ```
 
-`who`, `reportsTo` and `reassignTo` match against any text field on a profile,
-so a username, a full name or an email all work. The email is safest when two
-people share a name; an ambiguous match stops the run rather than guessing.
+`who`, `reportsTo`, `toManager` and `reassignTo` match against any text field on
+a profile, so a username, a full name or an email all work. A single first name
+works too when exactly one person matches it; when more than one does, the run
+stops and lists them rather than picking somebody.
+
+Two shorthands save you looking an id up:
+
+| Value | Where | Means |
+|---|---|---|
+| `"@manager"` | `reassignTo` | the leaver's own Area Manager inherits their book |
+| `"@manager"` | `toTeam` | take the team of the manager being moved to |
 
 ## Why a leaver is deactivated, not deleted
 
