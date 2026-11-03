@@ -3,6 +3,9 @@
  * Node 18+ (global fetch). No npm install required.
  */
 import { randomInt } from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const GREEN = '\x1b[32m', RED = '\x1b[31m', YELLOW = '\x1b[33m', DIM = '\x1b[2m', OFF = '\x1b[0m';
 export const ok = (m) => console.log(`${GREEN}  ok${OFF} ${m}`);
@@ -16,13 +19,33 @@ export function die(message) {
   process.exit(1);
 }
 
+/**
+ * Reads .env from the project root if it is there, so the credentials can live
+ * in a gitignored file rather than being exported into a shell every time.
+ * Anything already set in the real environment wins.
+ */
+function loadDotEnv() {
+  const file = resolve(dirname(fileURLToPath(import.meta.url)), '../..', '.env');
+  if (!existsSync(file)) return;
+  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i);
+    if (!m) continue;
+    const key = m[1];
+    const value = m[2].trim().replace(/^(['"])(.*)\1$/s, '$2');
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
+
 export function env() {
+  loadDotEnv();
   const url = (process.env.SUPABASE_URL ?? '').replace(/\/+$/, '');
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
   if (!url || !key) {
-    die('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before running.\n' +
-        '  export SUPABASE_URL=https://<project-ref>.supabase.co\n' +
-        '  export SUPABASE_SERVICE_ROLE_KEY=<service role key>');
+    die('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before running.\n\n' +
+        'Either export them, or put them in a .env file in the project root\n' +
+        '(it is gitignored):\n\n' +
+        '  SUPABASE_URL=https://<project-ref>.supabase.co\n' +
+        '  SUPABASE_SERVICE_ROLE_KEY=<service role key>');
   }
   return { url, key };
 }
