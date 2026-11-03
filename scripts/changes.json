@@ -1,0 +1,39 @@
+{
+  "_comment": [
+    "Joiners, movers and leavers for scripts/manage-users.mjs. No secrets here.",
+    "'who', 'reportsTo' and 'reassignTo' are matched against any text field on a",
+    "profile, so a username, a full name or an email all work; the email is the",
+    "safest when two people share a name.",
+    "Every TODO must be replaced before --apply will run."
+  ],
+  "add": [
+    {
+      "name": "Akhtar Hussain",
+      "username": "Akhtar_Hussain",
+      "email": "Akhtar.Hussain@paymob.com",
+      "role": "Agent",
+      "title": "Sales Acquisition Specialist (POS)",
+      "team": "TODO — which team",
+      "reportsTo": "TODO — which Area Manager"
+    }
+  ],
+  "move": [
+    {
+      "who": "Rahma_Ibet",
+      "toTeam": "TODO — the team value, if Hassan's team has one",
+      "toManager": "TODO — Hassan, as stored in the CRM"
+    }
+  ],
+  "offboard": [
+    {
+      "who": "Vijay_Anand",
+      "reason": "resigned",
+      "reassignTo": "TODO — who inherits their merchants"
+    },
+    {
+      "who": "Mohammed_Siddiq",
+      "reason": "terminated",
+      "reassignTo": "TODO — who inherits their merchants"
+    }
+  ]
+}

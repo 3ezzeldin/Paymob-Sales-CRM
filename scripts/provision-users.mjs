@@ -28,9 +28,12 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { randomInt } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  ok, warn, fail, note, die, colour, env, makeApi,
+  discoverColumns, listAuthUsers, makePassword, COLUMN_CANDIDATES,
+} from './lib/supabase.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -48,49 +51,7 @@ const AGENTS_ONLY = has('--agents-only');
 const PASSWORD_FILE = valueOf('--passwords');
 const ROSTER_FILE = valueOf('--roster') ?? resolve(HERE, 'users.json');
 
-const SUPABASE_URL = (process.env.SUPABASE_URL ?? '').replace(/\/+$/, '');
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
-
 // ---------------------------------------------------------------- utilities
-const GREEN = '\x1b[32m', RED = '\x1b[31m', YELLOW = '\x1b[33m', DIM = '\x1b[2m', OFF = '\x1b[0m';
-const ok = (m) => console.log(`${GREEN}  ok${OFF} ${m}`);
-const warn = (m) => console.log(`${YELLOW}warn${OFF} ${m}`);
-const fail = (m) => console.log(`${RED}fail${OFF} ${m}`);
-const note = (m) => console.log(`${DIM}      ${m}${OFF}`);
-
-function die(message) {
-  console.error(`\n${RED}${message}${OFF}\n`);
-  process.exit(1);
-}
-
-// Password alphabet excludes look-alikes (0/O, 1/l/I, 5/S, 2/Z) and the comma,
-// so a password survives being read aloud and being stored in a CSV.
-const UPPER = 'ABCDEFGHJKLMNPQRTUVWXY';
-const LOWER = 'abcdefghijkmnpqrtuvwxy';
-const DIGIT = '34679';
-const SYMBOL = '!@#$%*?+=';
-const ALL = UPPER + LOWER + DIGIT + SYMBOL;
-
-function pick(set) {
-  return set[randomInt(set.length)];
-}
-
-function makePassword(length = 14) {
-  for (;;) {
-    const chars = [
-      pick(UPPER), pick(UPPER), pick(LOWER), pick(LOWER),
-      pick(DIGIT), pick(DIGIT), pick(SYMBOL), pick(SYMBOL),
-    ];
-    while (chars.length < length) chars.push(pick(ALL));
-    for (let i = chars.length - 1; i > 0; i--) {
-      const j = randomInt(i + 1);
-      [chars[i], chars[j]] = [chars[j], chars[i]];
-    }
-    const pw = chars.join('');
-    if (!/(.)\1\1/.test(pw)) return pw;
-  }
-}
-
 function readPasswordCsv(path) {
   const lines = readFileSync(path, 'utf8').split(/\r?\n/).filter((l) => l.trim());
   if (!lines.length) die(`${path} is empty`);
@@ -111,67 +72,7 @@ function readPasswordCsv(path) {
 }
 
 // ---------------------------------------------------------------- supabase
-async function api(path, { method = 'GET', body, headers = {} } = {}) {
-  const res = await fetch(`${SUPABASE_URL}${path}`, {
-    method,
-    headers: {
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      'Content-Type': 'application/json',
-      ...headers,
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const text = await res.text();
-  let payload = null;
-  if (text) {
-    try { payload = JSON.parse(text); } catch { payload = text; }
-  }
-  return { ok: res.ok, status: res.status, payload };
-}
-
-/**
- * The hierarchy migration (schema-hierarchy.sql) was not available when this was
- * written, so the profiles column names are discovered from the PostgREST schema
- * rather than assumed. Each role below maps to the first candidate that exists.
- */
-const COLUMN_CANDIDATES = {
-  name: ['full_name', 'name', 'display_name', 'agent_name'],
-  email: ['email'],
-  role: ['role', 'user_role'],
-  manager: ['manager_id', 'parent_id', 'reports_to', 'supervisor_id', 'manager'],
-  team: ['team'],
-  title: ['title', 'job_title', 'position'],
-};
-
-async function discoverProfileColumns() {
-  const { ok: fine, status, payload } = await api('/rest/v1/');
-  if (!fine) die(`could not read the PostgREST schema (HTTP ${status}). Check SUPABASE_URL and the service role key.`);
-  const defs = payload?.definitions ?? payload?.components?.schemas ?? {};
-  const profiles = defs.profiles;
-  if (!profiles) die('no "profiles" table is exposed by PostgREST. Run schema.sql and schema-hierarchy.sql first.');
-  const present = new Set(Object.keys(profiles.properties ?? {}));
-
-  const resolved = {};
-  for (const [role, candidates] of Object.entries(COLUMN_CANDIDATES)) {
-    const hit = candidates.find((c) => present.has(c));
-    if (hit) resolved[role] = hit;
-  }
-  if (!present.has('id')) die('the profiles table has no id column; this script keys profiles on the auth user id.');
-  return { resolved, present };
-}
-
-async function listExistingUsers() {
-  const byEmail = new Map();
-  for (let page = 1; page <= 50; page++) {
-    const { ok: fine, status, payload } = await api(`/auth/v1/admin/users?page=${page}&per_page=200`);
-    if (!fine) die(`could not list existing auth users (HTTP ${status}): ${JSON.stringify(payload)}`);
-    const users = payload?.users ?? [];
-    for (const u of users) if (u.email) byEmail.set(u.email.toLowerCase(), u);
-    if (users.length < 200) break;
-  }
-  return byEmail;
-}
+const api = makeApi(env());
 
 async function createAuthUser(person) {
   const { ok: fine, status, payload } = await api('/auth/v1/admin/users', {
@@ -272,12 +173,6 @@ function loadRoster() {
 
 // ---------------------------------------------------------------- main
 async function main() {
-  if (!SUPABASE_URL || !SERVICE_KEY) {
-    die('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before running.\n' +
-        '  export SUPABASE_URL=https://<project-ref>.supabase.co\n' +
-        '  export SUPABASE_SERVICE_ROLE_KEY=<service role key>');
-  }
-
   const { seniors, managers, agents } = loadRoster();
   const people = AGENTS_ONLY ? agents : [...seniors, ...managers, ...agents];
 
@@ -295,12 +190,13 @@ async function main() {
     console.log('');
   }
 
-  console.log(`Supabase project : ${SUPABASE_URL}`);
+  console.log(`Supabase project : ${env().url}`);
   console.log(`Roster           : ${seniors.length} senior(s), ${managers.length} manager(s), ${agents.length} agent(s)`);
   console.log(`Mode             : ${APPLY ? 'APPLY (writes to the project)' : 'DRY RUN (writes nothing)'}`);
   console.log('');
 
-  const { resolved, present } = await discoverProfileColumns();
+  const { resolved, present } = await discoverColumns(api);
+  if (!present.has('id')) die('the profiles table has no id column; this script keys profiles on the auth user id.');
   console.log('profiles columns in use:');
   for (const [role, col] of Object.entries(resolved)) note(`${role.padEnd(8)} -> ${col}`);
   for (const role of Object.keys(COLUMN_CANDIDATES)) {
@@ -319,11 +215,11 @@ async function main() {
       const tag = p.existing ? '(existing, lookup only)' : '';
       console.log(`  ${p.kind.padEnd(7)} ${p.email.padEnd(30)} role=${String(p.role).padEnd(14)} reports to=${String(up).padEnd(18)} ${tag}`);
     }
-    console.log(`\n${YELLOW}Dry run only. Re-run with --apply to create these accounts.${OFF}`);
+    console.log(`\n${colour.YELLOW}Dry run only. Re-run with --apply to create these accounts.${colour.OFF}`);
     return;
   }
 
-  const existing = await listExistingUsers();
+  const existing = await listAuthUsers(api);
   const idByName = new Map();
   const results = [];
 

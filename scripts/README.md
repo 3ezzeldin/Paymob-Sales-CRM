@@ -68,3 +68,38 @@ Until it does, the flag is a note rather than an enforcement.
 
 Re-running is safe. An email that already has an auth user is reused with its
 password untouched, and the profiles upsert merges on `id`.
+
+---
+
+# Joiners, movers and leavers
+
+`manage-users.mjs` applies the changes in `changes.json`: `add` creates an
+account, `move` changes someone's team and reporting line, `offboard` hands
+their book of business to a successor and then disables them.
+
+```bash
+node scripts/manage-users.mjs            # dry run, reports what it would do
+node scripts/manage-users.mjs --apply
+```
+
+`who`, `reportsTo` and `reassignTo` match against any text field on a profile,
+so a username, a full name or an email all work. The email is safest when two
+people share a name; an ambiguous match stops the run rather than guessing.
+
+## Why a leaver is deactivated, not deleted
+
+`merchants.owner_agent_id` is declared `references profiles(id) on delete set
+null`, and the select policy is `sees_all() or in_my_scope(owner_agent_id)`.
+
+Delete a profile and every merchant that person owned keeps its row but loses
+its owner. `in_my_scope(null)` matches nobody, so those merchants disappear
+from the CRM for everyone except an admin or director. Nothing errors. The
+pipeline simply gets smaller, and the first person to notice is whoever goes
+looking for an account that used to be there.
+
+So the default is to reassign the leaver's merchants and activities to a named
+successor, mark the profile inactive, and ban the auth user so they cannot sign
+in. The account stays as the audit trail for the activity history.
+
+`--delete` removes the auth user outright. It refuses to run unless a successor
+is named and the reassignment has already succeeded.
