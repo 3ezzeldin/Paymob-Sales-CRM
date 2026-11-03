@@ -93,6 +93,12 @@ Two shorthands save you looking an id up:
 |---|---|---|
 | `"@manager"` | `reassignTo` | the leaver's own Area Manager inherits their book |
 | `"@manager"` | `toTeam` | take the team of the manager being moved to |
+| `"@same-as:<person>"` | `reportsTo`, `team` | copy that person's reporting line or team |
+
+`@same-as` is how a replacement hire is usually described — same team and same
+lead as the person they are replacing — without anyone having to recall a
+manager's name. The dry run prints what each one resolved to, so check that
+line before applying.
 
 ## Why a leaver is deactivated, not deleted
 

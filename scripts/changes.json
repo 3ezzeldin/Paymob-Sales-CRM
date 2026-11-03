@@ -4,6 +4,7 @@
     "'who', 'reportsTo', 'toManager' and 'reassignTo' match a username, a full name",
     "or an email, and fall back to a single first name when only one person matches.",
     "\"@manager\" on reassignTo means the person's own Area Manager; on toTeam it",
+    "\"@same-as:<person>\" on reportsTo or team copies that person's reporting line or team.",
     "means the team of the manager being moved to.",
     "Every TODO must be replaced before --apply will run."
   ],
@@ -14,8 +15,8 @@
       "email": "Akhtar.Hussain@paymob.com",
       "role": "Agent",
       "title": "Sales Acquisition Specialist (POS)",
-      "team": "TODO \u2014 which team",
-      "reportsTo": "TODO \u2014 which Area Manager"
+      "team": "@same-as:Vijay_Anand",
+      "reportsTo": "@same-as:Vijay_Anand"
     }
   ],
   "move": [

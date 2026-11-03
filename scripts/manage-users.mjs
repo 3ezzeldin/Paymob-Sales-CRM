@@ -87,6 +87,14 @@ function findProfile(profiles, who, resolved = {}) {
 }
 
 /**
+ * "@same-as:<person>" copies a reporting line or a team from somebody who
+ * already has one, which is how a replacement hire is actually described:
+ * "same as the person they are replacing", not a manager name nobody recalls.
+ */
+const sameAsTarget = (v) =>
+  (typeof v === 'string' && v.startsWith('@same-as:')) ? v.slice('@same-as:'.length).trim() : null;
+
+/**
  * "@manager" means "whoever this person already reports to", so a book of
  * business can be handed up the chain without naming the lead. "@manager" on
  * toTeam means "the team of the manager being moved to".
@@ -165,17 +173,33 @@ async function main() {
   // ---------------------------------------------------------------- joiners
   for (const p of adds) {
     const email = String(p.email).trim().toLowerCase();
-    const manager = p.reportsTo ? findProfile(profiles, p.reportsTo, resolved) : null;
-    if (p.reportsTo && !manager) {
-      fail(`add ${p.name}: "${p.reportsTo}" not found in profiles`);
-      continue;
+
+    const mgrLike = sameAsTarget(p.reportsTo);
+    let manager = null;
+    if (mgrLike) {
+      const model = findProfile(profiles, mgrLike, resolved);
+      if (!model) { fail(`add ${p.name}: "${mgrLike}" not found, so there is no reporting line to copy`); continue; }
+      manager = resolveManagerOf(profiles, model, resolved);
+      if (!manager) { fail(`add ${p.name}: ${label(model, resolved)} has no manager set, so there is nothing to copy`); continue; }
+    } else if (p.reportsTo) {
+      manager = findProfile(profiles, p.reportsTo, resolved);
+      if (!manager) { fail(`add ${p.name}: "${p.reportsTo}" not found in profiles`); continue; }
+    }
+
+    const teamLike = sameAsTarget(p.team);
+    let team = p.team;
+    if (teamLike) {
+      const model = findProfile(profiles, teamLike, resolved);
+      if (!model) { fail(`add ${p.name}: "${teamLike}" not found, so there is no team to copy`); continue; }
+      team = resolved.team ? model[resolved.team] : null;
+      if (!team) { fail(`add ${p.name}: ${label(model, resolved)} has no team set, so there is nothing to copy`); continue; }
     }
     if (authUsers.has(email)) {
       warn(`add ${p.name}: ${email} already has an account; skipping`);
       continue;
     }
     if (!APPLY) {
-      console.log(`  add       ${p.name} <${email}> role=${p.role} team=${p.team ?? '-'} reports to=${p.reportsTo ?? '-'}`);
+      console.log(`  add       ${p.name} <${email}> role=${p.role} team=${team ?? '-'} reports to=${manager ? label(manager, resolved) : '-'}`);
       continue;
     }
     const password = p.password ?? makePassword();
@@ -194,7 +218,7 @@ async function main() {
     if (resolved.username && p.username) row[resolved.username] = p.username;
     if (resolved.email) row[resolved.email] = email;
     if (resolved.role) row[resolved.role] = p.role;
-    if (resolved.team && p.team) row[resolved.team] = p.team;
+    if (resolved.team && team) row[resolved.team] = team;
     if (resolved.title && p.title) row[resolved.title] = p.title;
     if (resolved.manager && manager) row[resolved.manager] = manager.id;
     // Without this a new profile can land with a null status and be filtered
@@ -205,8 +229,8 @@ async function main() {
       headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
     });
     if (!up.ok) { fail(`add ${p.name}: profile ${up.status} ${JSON.stringify(up.payload)}`); continue; }
-    newPasswords.push({ ...p, email, password });
-    ok(`added ${p.name} <${email}>`);
+    newPasswords.push({ ...p, email, password, team });
+    ok(`added ${p.name} <${email}>${team ? ` to ${team}` : ''}${manager ? ` under ${label(manager, resolved)}` : ''}`);
   }
 
   // ----------------------------------------------------------------- movers
